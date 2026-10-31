@@ -49,7 +49,7 @@ let cfg=null,app,auth,db,me=null,tab='kho',q='',idle=0,un=[],setting=false,D={sl
 const col=n=>F.collection(db,n),dc=(n,i)=>F.doc(db,n,i);
 const err=t=>$('#le').textContent=t||'';
 /* ---- cấu hình Firebase lưu trong app ---- */
-function parseCfg(t){const a=t.indexOf('{'),b=t.lastIndexOf('}');if(a<0||b<0)throw 0;let x=t.slice(a,b+1).replace(/'/g,'"').replace(/([{,]\s*)([A-Za-z0-9_]+)\s*:/g,'$1"$2":').replace(/,\s*}/g,'}');const o=JSON.parse(x);if(!o.apiKey||!o.projectId)throw 0;return o}
+function parseCfg(t){const k=Math.max(0,t.indexOf('firebaseConfig')),a=t.indexOf('{',k),b=t.indexOf('}',a);if(a<0||b<0)throw 0;let x=t.slice(a,b+1).replace(/'/g,'"').replace(/([{,]\s*)([A-Za-z0-9_]+)\s*:/g,'$1"$2":').replace(/,\s*}/g,'}');const o=JSON.parse(x);if(!o.apiKey||!o.projectId)throw 0;return o}
 function saveFb(){try{cfg=parseCfg($('#fc').value);ls.set('sv_fb',JSON.stringify(cfg));boot()}catch(e){err('Cấu hình không hợp lệ (cần apiKey, projectId…).')}}
 function resetFb(){if(confirm('Xóa cấu hình Firebase khỏi app?')){ls.del('sv_fb');lockNow(true);cfg=null;boot()}}
 function boot(){err();$('#cfgf').style.display=cfg?'none':'block';$('#lf').style.display=cfg?'block':'none';$('#lm').textContent=cfg?'Đăng nhập bằng tài khoản được Admin cấp. Lần đầu: bấm “Tạo Admin đầu tiên”.':'Lần đầu: dán cấu hình Firebase của bạn. Cấu hình được lưu trong app, không phải nhập lại.';

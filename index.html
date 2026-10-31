@@ -137,5 +137,6 @@ async function setRole(id,r){if(id==me.uid&&r!='admin'&&!confirm('Bạn sắp t�
 async function du(id){if(id==me.uid)return alert('Không thể tự thu hồi quyền.');if(!confirm('Thu hồi quyền người này?'))return;await F.deleteDoc(dc('users',id));log('THU HỒI',id)}
 async function au(){const e=g$('n1'),p=$('#n3').value,r=$('#n2').value;if(!e||p.length<10)return alert('Cần email và mật khẩu ≥ 10 ký tự.');
 const a2=A.initializeApp(cfg,'sec'+Date.now()),au2=AU.getAuth(a2);try{const c=await AU.createUserWithEmailAndPassword(au2,e,p);await F.setDoc(dc('users',c.user.uid),{email:e,role:r});await AU.signOut(au2);log('TẠO TÀI KHOẢN',e+' ('+r+')');alert('Đã tạo. Hãy báo mật khẩu tạm cho người dùng.')}catch(x){alert('Lỗi: '+(x.code||x.message))}}
-cfg=JSON.parse(ls.get('sv_fb')||'null');boot();
+const DEFAULT_CFG={apiKey:"AIzaSyDLos0ejKGbo02AXJYuW_VM0wpI5F3TtQs",authDomain:"dhctgtp-6e104.firebaseapp.com",projectId:"dhctgtp-6e104",storageBucket:"dhctgtp-6e104.firebasestorage.app",messagingSenderId:"695522702255",appId:"1:695522702255:web:d406debbb9aed64e99f55a",measurementId:"G-P15SKM161Q"};
+cfg=JSON.parse(ls.get('sv_fb')||'null')||DEFAULT_CFG;ls.set('sv_fb',JSON.stringify(cfg));boot();
 </script></body></html>

@@ -1,7 +1,7 @@
 <!DOCTYPE html>
 <html lang="vi"><head><meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<title>StoneVault – Quản lý kho đá</title>
+<title>StoneVault – Quản lý kho đá (Firebase)</title>
 <style>
 :root{--bg:#f4f5f8;--card:#fff;--tx:#1b2030;--mu:#667086;--ln:#e3e6ee;--ac:#4338ca;--ok:#15935f;--wr:#c98a00;--er:#d6334a;box-sizing:border-box;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}
 @media(prefers-color-scheme:dark){:root:not([data-theme="light"]){--bg:#0f1220;--card:#181c2e;--tx:#e8eaf3;--mu:#98a0b8;--ln:#2a3050;--ac:#8b85ff}}
@@ -31,100 +31,111 @@ th,td{padding:8px;border-bottom:1px solid var(--ln);text-align:left;white-space:
 #q{display:none}textarea{background:var(--card);color:var(--tx);border:1px solid var(--ln);border-radius:8px}
 @media print{body>*:not(#q){display:none!important}#q{display:block;color:#000;background:#fff;padding:24px}}
 </style></head><body>
-<div id="lock"><div class="c" style="max-height:94vh;overflow:auto"><h2 style="margin:0">🪨 StoneVault</h2><p class="mu" id="lm"></p>
-<div id="sf" style="display:none"><b>1. Tài khoản Admin (quyền cao nhất)</b><div class="f"><label>Tên đăng nhập<input id="s_u" value="admin"></label><label>Mật khẩu (≥10 ký tự)<input id="s_p" type="password"></label><label>Nhập lại<input id="s_p2" type="password"></label></div>
-<p><b>2. Filebase (S3)</b></p><div class="f"><label>Endpoint<input id="f_ep" value="https://s3.filebase.com"></label><label>Region<input id="f_rg" value="us-east-1"></label><label>Bucket<input id="f_bk"></label><label>Access key<input id="f_ak"></label><label>Secret key<input id="f_sk" type="password"></label><label><br><input id="f_au" type="checkbox" style="width:auto" checked> Tự đồng bộ khi lưu</label></div>
-<p><b>3. GitHub (tùy chọn, sao lưu cấu hình)</b></p><div class="f"><label>Owner<input id="g_ow"></label><label>Repo<input id="g_rp"></label><label>Branch<input id="g_br" value="main"></label><label>Token (contents:write)<input id="g_tk" type="password"></label><label>Đường dẫn file<input id="g_pt" value="backup/vault.json"></label></div></div>
-<div id="lf"><label>Tên đăng nhập<input id="l_u" autocomplete="username"></label><label>Mật khẩu<input id="l_p" type="password" autocomplete="current-password"></label></div>
-<p><button class="p" style="width:100%" onclick="go()">Tiếp tục</button></p><p class="mu" id="le" style="color:var(--er)"></p>
-<details><summary class="mu">Khôi phục từ bản sao lưu (dán JSON két mã hóa)</summary><textarea id="rv" rows="4" style="width:100%"></textarea><button onclick="restoreV()">Khôi phục</button></details></div></div>
-<header><b>🪨 StoneVault</b><span class="mu">Admin · Filebase · GitHub</span><span class="sp"></span><span class="mu" id="sy"></span><span class="mu" id="who"></span><span class="mu" id="cd"></span><button onclick="lockNow()">🔒 Khóa</button></header>
+<div id="lock"><div class="c" style="width:min(420px,100%);max-height:94vh;overflow:auto"><h2 style="margin:0">🪨 StoneVault</h2><p class="mu" id="lm"></p>
+<div id="cfgf" style="display:none"><label>Dán firebaseConfig (Project settings → Your apps → Web)<textarea id="fc" rows="8" style="width:100%"></textarea></label><p><button class="p" onclick="saveFb()">Lưu cấu hình vào app</button></p></div>
+<div id="lf" style="display:none"><label>Email<input id="l_e" type="email" autocomplete="username"></label><label>Mật khẩu<input id="l_p" type="password" autocomplete="current-password"></label><p><button class="p" onclick="login()">Đăng nhập</button> <button onclick="setupAdmin()">Tạo Admin đầu tiên</button></p><p><a href="#" onclick="resetFb();return false">Đổi cấu hình Firebase</a></p></div><p class="mu" id="le" style="color:var(--er)"></p></div></div>
+<header><b>🪨 StoneVault</b><span class="mu">Firebase</span><span class="sp"></span><span class="mu" id="who"></span><span class="mu" id="cd"></span><button onclick="lockNow()">🔒 Đăng xuất</button></header>
 <nav id="nv"></nav><main id="m"></main><div id="q"></div>
-<script>
-const $=s=>document.querySelector(s),enc=new TextEncoder(),dec=new TextDecoder();
+<script type="module">
+const B='https://www.gstatic.com/firebasejs/10.12.2/';
+const [A,AU,F]=await Promise.all([import(B+'firebase-app.js'),import(B+'firebase-auth.js'),import(B+'firebase-firestore.js')]);
+const $=s=>document.querySelector(s),g$=i=>$('#'+i).value.trim();
 const esc=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
-const b64=b=>btoa(String.fromCharCode(...new Uint8Array(b))),ub=s=>Uint8Array.from(atob(s),c=>c.charCodeAt(0));
-const hx=b=>[...new Uint8Array(b)].map(x=>x.toString(16).padStart(2,'0')).join('');
-const vnd=n=>Math.round(n||0).toLocaleString('vi-VN')+' ₫',m2=n=>(+n||0).toFixed(2)+' m²',g$=i=>$('#'+i).value.trim();
-const mem={};const ls={get:k=>{try{return localStorage.getItem(k)}catch(e){return mem[k]??null}},set:(k,v)=>{try{localStorage.setItem(k,v)}catch(e){mem[k]=v}},del:k=>{try{localStorage.removeItem(k)}catch(e){delete mem[k]}}};
-const LK='sv2';let V=null,DEK=null,CFGK=null,CFG=null,S=null,me=null,tab='kho',idle=0,q='';
+const vnd=n=>Math.round(n||0).toLocaleString('vi-VN')+' ₫',m2=n=>(+n||0).toFixed(2)+' m²';
+const ls={get:k=>{try{return localStorage.getItem(k)}catch(e){return null}},set:(k,v)=>{try{localStorage.setItem(k,v)}catch(e){}},del:k=>{try{localStorage.removeItem(k)}catch(e){}}};
 const STEPS=['Mới tạo','Đã duyệt','Đang gia công','Vận chuyển','Thi công','Hoàn tất'],SCRAP=0.3;
 const PERM={admin:['kho','nhap','ban','don','nhatky','qt','cf'],manager:['kho','nhap','ban','don','nhatky'],staff:['kho','ban','don']};
-const can=t=>me&&PERM[me.role].includes(t);
-/* ---------- crypto ---------- */
-async function derive(p,salt){const k=await crypto.subtle.importKey('raw',enc.encode(p),'PBKDF2',false,['deriveKey']);return crypto.subtle.deriveKey({name:'PBKDF2',salt,iterations:310000,hash:'SHA-256'},k,{name:'AES-GCM',length:256},false,['encrypt','decrypt'])}
-async function seal(o,k){const iv=crypto.getRandomValues(new Uint8Array(12));return b64(iv)+'.'+b64(await crypto.subtle.encrypt({name:'AES-GCM',iv},k,enc.encode(JSON.stringify(o))))}
-async function open(s,k){const[i,c]=s.split('.');return JSON.parse(dec.decode(await crypto.subtle.decrypt({name:'AES-GCM',iv:ub(i)},k,ub(c))))}
-const gen=()=>crypto.subtle.generateKey({name:'AES-GCM',length:256},true,['encrypt','decrypt']);
-const wrap=async(k,uk)=>seal(b64(await crypto.subtle.exportKey('raw',k)),uk);
-const unwrap=async(s,uk)=>crypto.subtle.importKey('raw',ub(await open(s,uk)),'AES-GCM',true,['encrypt','decrypt']);
-const sha=async s=>hx(await crypto.subtle.digest('SHA-256',typeof s=='string'?enc.encode(s):s));
-async function mkUser(u,role,pw){const salt=crypto.getRandomValues(new Uint8Array(16)),uk=await derive(pw,salt),r={u,role,salt:b64(salt),wd:await wrap(DEK,uk)};if(role=='admin')r.wc=await wrap(CFGK,uk);return r}
-/* ---------- lưu trữ ---------- */
-function sync(t){const e=$('#sy');if(e)e.textContent=t}
-async function persist(){V.data=await seal(S,DEK);V.ts=Date.now();ls.set(LK,JSON.stringify(V));if(CFG?.fb?.auto)push().then(()=>sync('☁️ Filebase '+new Date().toLocaleTimeString('vi-VN'))).catch(e=>sync('⚠️ '+e.message))}
-async function log(a,d){const p=S.audit.length?S.audit.at(-1).h:'0',t=new Date().toISOString(),u=me?me.u:'-';S.audit.push({t,u,a,d,h:await sha(p+t+u+a+d)});await persist()}
-/* ---------- Filebase S3 (SigV4) ---------- */
-async function hm(k,s){const ck=await crypto.subtle.importKey('raw',k,{name:'HMAC',hash:'SHA-256'},false,['sign']);return new Uint8Array(await crypto.subtle.sign('HMAC',ck,enc.encode(s)))}
-async function s3(method,key,body=''){const c=CFG?.fb;if(!c?.bucket)throw Error('Chưa cấu hình Filebase');const u=new URL(c.ep),path='/'+c.bucket+'/'+key.split('/').map(encodeURIComponent).join('/'),d=new Date().toISOString().replace(/[:-]|\.\d{3}/g,''),ds=d.slice(0,8),ph=await sha(body),sc=`${ds}/${c.rg}/s3/aws4_request`;
-const ch=`host:${u.host}\nx-amz-content-sha256:${ph}\nx-amz-date:${d}\n`,sh='host;x-amz-content-sha256;x-amz-date',cr=`${method}\n${path}\n\n${ch}\n${sh}\n${ph}`;
-const sts=`AWS4-HMAC-SHA256\n${d}\n${sc}\n${await sha(cr)}`;let k=await hm(enc.encode('AWS4'+c.sk),ds);for(const x of [c.rg,'s3','aws4_request'])k=await hm(k,x);
-const sig=hx(await hm(k,sts));const r=await fetch(u.origin+path,{method,body:method=='PUT'?body:undefined,headers:{'x-amz-date':d,'x-amz-content-sha256':ph,Authorization:`AWS4-HMAC-SHA256 Credential=${c.ak}/${sc}, SignedHeaders=${sh}, Signature=${sig}`}});return r}
-async function push(){const r=await s3('PUT','stonevault/vault.json',JSON.stringify(V));if(!r.ok)throw Error('Filebase '+r.status)}
-async function pull(){const r=await s3('GET','stonevault/vault.json');if(!r.ok)throw Error('Filebase '+r.status);return r.text()}
-async function ghPush(){const g=CFG?.gh;if(!g?.tk)throw Error('Chưa cấu hình GitHub');const url=`https://api.github.com/repos/${g.ow}/${g.rp}/contents/${g.pt}`,h={Authorization:'Bearer '+g.tk,Accept:'application/vnd.github+json'};
-const e=await fetch(url+'?ref='+g.br,{headers:h}),sh=e.ok?(await e.json()).sha:undefined;const r=await fetch(url,{method:'PUT',headers:h,body:JSON.stringify({message:'StoneVault backup '+new Date().toISOString(),content:btoa(String.fromCharCode(...enc.encode(JSON.stringify(V)))),branch:g.br,sha})});if(!r.ok)throw Error('GitHub '+r.status);}
-/* ---------- đăng nhập / cài đặt lần đầu ---------- */
-function init(){V=JSON.parse(ls.get(LK)||'null');const f=!V;$('#sf').style.display=f?'block':'none';$('#lf').style.display=f?'none':'block';$('#lm').textContent=f?'Lần đầu: tạo Admin và nhập cấu hình Filebase/GitHub. Mọi thứ được mã hóa và lưu trong app, các lần sau chỉ cần đăng nhập.':'Đăng nhập để giải mã kho dữ liệu.'}
-async function go(){const e=$('#le');e.textContent='';if(!V)return setup(e);
-const f=JSON.parse(ls.get('sv_fail')||'{"n":0,"u":0}');if(Date.now()<f.u){e.textContent='Bị khóa tạm thời '+Math.ceil((f.u-Date.now())/1000)+'s.';return}
-try{const rec=V.users.find(x=>x.u==g$('l_u'));if(!rec)throw 0;const uk=await derive($('#l_p').value,ub(rec.salt));DEK=await unwrap(rec.wd,uk);if(rec.wc){CFGK=await unwrap(rec.wc,uk);CFG=await open(V.cfg,CFGK)}S=await open(V.data,DEK);me=rec}
-catch(x){DEK=CFGK=CFG=S=me=null;f.n++;if(f.n>=5)f.u=Date.now()+Math.min(2**(f.n-5)*30000,3600000);ls.set('sv_fail',JSON.stringify(f));e.textContent='Sai tài khoản/mật khẩu ('+f.n+' lần).';return}
-ls.del('sv_fail');$('#l_p').value='';await log('ĐĂNG NHẬP','Thành công');enter()}
-async function setup(e){const p=$('#s_p').value,u=g$('s_u');if(!u||p.length<10||p!==$('#s_p2').value){e.textContent='Admin: cần tên, mật khẩu ≥10 ký tự và trùng khớp.';return}
-if(!g$('f_bk')||!g$('f_ak')||!$('#f_sk').value){e.textContent='Nhập đủ bucket, access key, secret key của Filebase.';return}
-DEK=await gen();CFGK=await gen();CFG={fb:{ep:g$('f_ep'),rg:g$('f_rg'),bucket:g$('f_bk'),ak:g$('f_ak'),sk:$('#f_sk').value,auto:$('#f_au').checked},gh:{ow:g$('g_ow'),rp:g$('g_rp'),br:g$('g_br'),tk:$('#g_tk').value,pt:g$('g_pt')}};
-S={slabs:[],orders:[],audit:[]};me=await mkUser(u,'admin',p);V={v:2,users:[me],cfg:await seal(CFG,CFGK),data:''};await log('KHỞI TẠO','Admin '+u+' + cấu hình');for(const i of ['s_p','s_p2','f_sk','g_tk'])$('#'+i).value='';enter()}
-function enter(){$('#lock').style.display='none';idle=Date.now();tab='kho';render()}
-function lockNow(){DEK=CFGK=CFG=S=me=null;$('#lock').style.display='grid';$('#m').innerHTML='';init()}
-function restoreV(){try{const d=JSON.parse($('#rv').value);if(!d.users||!d.data)throw 0;ls.set(LK,JSON.stringify(d));init();$('#le').textContent='Đã khôi phục. Đăng nhập bằng tài khoản cũ.'}catch(x){$('#le').textContent='JSON không hợp lệ.'}}
-setInterval(()=>{if(!S)return;const r=300000-(Date.now()-idle);$('#cd').textContent='Tự khóa '+Math.max(0,Math.ceil(r/1000))+'s';if(r<=0)lockNow()},1000);
+let cfg=null,app,auth,db,me=null,tab='kho',q='',idle=0,un=[],setting=false,D={slabs:[],orders:[],audit:[],users:[]};
+const col=n=>F.collection(db,n),dc=(n,i)=>F.doc(db,n,i);
+const err=t=>$('#le').textContent=t||'';
+/* ---- cấu hình Firebase lưu trong app ---- */
+function parseCfg(t){const a=t.indexOf('{'),b=t.lastIndexOf('}');if(a<0||b<0)throw 0;let x=t.slice(a,b+1).replace(/'/g,'"').replace(/([{,]\s*)([A-Za-z0-9_]+)\s*:/g,'$1"$2":').replace(/,\s*}/g,'}');const o=JSON.parse(x);if(!o.apiKey||!o.projectId)throw 0;return o}
+function saveFb(){try{cfg=parseCfg($('#fc').value);ls.set('sv_fb',JSON.stringify(cfg));boot()}catch(e){err('Cấu hình không hợp lệ (cần apiKey, projectId…).')}}
+function resetFb(){if(confirm('Xóa cấu hình Firebase khỏi app?')){ls.del('sv_fb');lockNow(true);cfg=null;boot()}}
+function boot(){err();$('#cfgf').style.display=cfg?'none':'block';$('#lf').style.display=cfg?'block':'none';$('#lm').textContent=cfg?'Đăng nhập bằng tài khoản được Admin cấp. Lần đầu: bấm “Tạo Admin đầu tiên”.':'Lần đầu: dán cấu hình Firebase của bạn. Cấu hình được lưu trong app, không phải nhập lại.';
+if(cfg&&!app){app=A.initializeApp(cfg);auth=AU.getAuth(app);db=F.getFirestore(app);AU.onAuthStateChanged(auth,onAuth)}}
+/* ---- xác thực ---- */
+async function login(){err();try{await AU.signInWithEmailAndPassword(auth,g$('l_e'),$('#l_p').value)}catch(e){err('Đăng nhập thất bại: '+(e.code||e.message))}}
+async function setupAdmin(){err();const p=$('#l_p').value,e=g$('l_e');if(!e||p.length<10)return err('Cần email và mật khẩu ≥ 10 ký tự.');setting=true;
+try{const c=await AU.createUserWithEmailAndPassword(auth,e,p),b=F.writeBatch(db);b.set(dc('users',c.user.uid),{email:e,role:'admin'});b.set(dc('settings','bootstrap'),{by:c.user.uid,at:F.serverTimestamp()});await b.commit();setting=false;await onAuth(c.user)}
+catch(x){setting=false;if(auth.currentUser)await AU.deleteUser(auth.currentUser).catch(()=>AU.signOut(auth));err('Không tạo được Admin (đã có Admin hoặc chưa dán Rules): '+(x.code||x.message))}}
+async function onAuth(u){if(setting)return;un.forEach(f=>f());un=[];me=null;if(!u){$('#lock').style.display='grid';$('#m').innerHTML='';return}
+try{const d=await F.getDoc(dc('users',u.uid));if(!d.exists()||!PERM[d.data().role])throw 0;me={uid:u.uid,...d.data()}}catch(e){await AU.signOut(auth);err('Tài khoản chưa được cấp quyền hoặc chưa dán Firestore Rules.');return}
+$('#lock').style.display='none';$('#l_p').value='';idle=Date.now();tab='kho';listen();render();log('ĐĂNG NHẬP','')}
+function lockNow(skip){if(auth&&!skip)AU.signOut(auth);else{$('#lock').style.display='grid';$('#m').innerHTML=''}}
+setInterval(()=>{if(!me)return;const r=300000-(Date.now()-idle);$('#cd').textContent='Tự khóa '+Math.max(0,Math.ceil(r/1000))+'s';if(r<=0)lockNow()},1000);
 ['click','keydown','touchstart'].forEach(e=>addEventListener(e,()=>idle=Date.now()));
-const TABS={kho:'📦 Kho',nhap:'➕ Nhập tấm',ban:'🧾 Báo giá/Bán',don:'🚚 Đơn hàng',nhatky:'🛡️ Nhật ký',qt:'👑 Quản trị',cf:'☁️ Cấu hình & Đồng bộ'};
-function render(){$('#who').textContent=me.u+' · '+me.role;$('#nv').innerHTML=PERM[me.role].map(k=>`<button class="${k==tab?'on':''}" onclick="tab='${k}';render()">${TABS[k]}</button>`).join('');$('#m').innerHTML=can(tab)?W[tab]():''}
+/* ---- dữ liệu thời gian thực ---- */
+function listen(){const L=(n,k,qr)=>un.push(F.onSnapshot(qr||col(n),s=>{D[k]=s.docs.map(d=>({...d.data(),id:d.id}));render()},e=>err(n+': '+e.code)));L('slabs','slabs');L('orders','orders');
+if(me.role!='staff')L('audit','audit',F.query(col('audit'),F.orderBy('t','desc'),F.limit(200)));if(me.role=='admin')L('users','users')}
+const log=(a,d)=>F.addDoc(col('audit'),{t:F.serverTimestamp(),uid:me.uid,u:me.email,a,d}).catch(()=>{});
+const can=t=>me&&PERM[me.role].includes(t);
+const TABS={kho:'📦 Kho',nhap:'➕ Nhập tấm',ban:'🧾 Báo giá/Bán',don:'🚚 Đơn hàng',nhatky:'🛡️ Nhật ký',qt:'👑 Quản trị',cf:'⚙️ Firebase & Rules'};
+function render(){if(!me)return;$('#who').textContent=me.email+' · '+me.role;$('#nv').innerHTML=PERM[me.role].map(k=>`<button class="${k==tab?'on':''}" onclick="tab='${k}';render()">${TABS[k]}</button>`).join('');$('#m').innerHTML=can(tab)?W[tab]():''}
 const status=s=>s.rem<=0.0001?['Hết','er']:s.rem>=s.area-0.0001?['Nguyên tấm','ok']:s.rem<SCRAP?['Dư/phế liệu','wr']:['Đã cắt','wr'];
-const debt=o=>o.total-o.paid.reduce((a,b)=>a+b,0);
+const debt=o=>o.total-(o.paid||[]).reduce((a,b)=>a+b,0);
+const RULES=`rules_version = '2';
+service cloud.firestore {
+ match /databases/{database}/documents {
+  function ok(){return request.auth!=null && exists(/databases/$(database)/documents/users/$(request.auth.uid));}
+  function role(){return get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role;}
+  function boot(){return !exists(/databases/$(database)/documents/settings/bootstrap);}
+  match /users/{u} {
+   allow read: if request.auth!=null && (request.auth.uid==u || (ok() && role()=='admin'));
+   allow create: if request.auth!=null && ((ok() && role()=='admin') || (request.auth.uid==u && request.resource.data.role=='admin' && boot()));
+   allow update, delete: if ok() && role()=='admin';
+  }
+  match /settings/bootstrap {
+   allow read: if request.auth!=null;
+   allow create: if request.auth!=null && boot();
+  }
+  match /slabs/{id} {
+   allow read: if ok();
+   allow create: if ok() && role() in ['admin','manager'];
+   allow update: if ok() && (role() in ['admin','manager'] || request.resource.data.diff(resource.data).affectedKeys().hasOnly(['rem']));
+   allow delete: if ok() && role()=='admin';
+  }
+  match /orders/{id} {
+   allow read, create: if ok();
+   allow update: if ok() && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['step','paid']);
+   allow delete: if ok() && role()=='admin';
+  }
+  match /audit/{id} {
+   allow read: if ok() && role() in ['admin','manager'];
+   allow create: if ok() && request.resource.data.uid==request.auth.uid;
+   allow update, delete: if false;
+  }
+ }
+}`;
 const W={
-kho(){const l=S.slabs.filter(s=>(s.id+s.lot+s.type).toLowerCase().includes(q.toLowerCase())),tv=S.slabs.reduce((a,s)=>a+s.rem*s.cost,0),tm=S.slabs.reduce((a,s)=>a+s.rem,0),td=S.orders.reduce((a,o)=>a+debt(o),0);
-return`<div class="g"><div class="c"><small>Số tấm</small><h2>${S.slabs.length}</h2></div><div class="c"><small>Diện tích tồn</small><h2>${m2(tm)}</h2></div><div class="c"><small>Giá trị tồn</small><h2>${me.role=='staff'?'—':vnd(tv)}</h2></div><div class="c"><small>Công nợ</small><h2>${vnd(td)}</h2></div></div>
+kho(){const S=D.slabs,l=S.filter(s=>(s.id+s.lot+s.type).toLowerCase().includes(q.toLowerCase())).sort((a,b)=>a.id>b.id?1:-1),tv=S.reduce((a,s)=>a+s.rem*s.cost,0),td=D.orders.reduce((a,o)=>a+debt(o),0);
+return`<div class="g"><div class="c"><small>Số tấm</small><h2>${S.length}</h2></div><div class="c"><small>Diện tích tồn</small><h2>${m2(S.reduce((a,s)=>a+s.rem,0))}</h2></div><div class="c"><small>Giá trị tồn</small><h2>${me.role=='staff'?'—':vnd(tv)}</h2></div><div class="c"><small>Công nợ</small><h2>${vnd(td)}</h2></div></div>
 <p><input placeholder="Tìm mã tấm / lô / loại đá…" value="${esc(q)}" oninput="q=this.value;clearTimeout(window.qt);window.qt=setTimeout(()=>{render();const i=$('#m input');i.focus();i.setSelectionRange(99,99)},300)"></p>
 <div class="c w"><table><tr><th>Mã tấm</th><th>Lô</th><th>Loại đá</th><th>D×R×Dày</th><th>Còn lại</th><th>Trạng thái</th></tr>${l.map(s=>{const t=status(s);return`<tr><td><b>${esc(s.id)}</b></td><td>${esc(s.lot)}</td><td>${esc(s.type)}</td><td>${s.l}×${s.w}m × ${s.th}cm</td><td>${m2(s.rem)} / ${m2(s.area)}</td><td><span class="t ${t[1]}">${t[0]}</span></td></tr>`}).join('')||'<tr><td colspan=6 class="mu">Chưa có tấm đá.</td></tr>'}</table></div>`},
 nhap(){return`<div class="c"><h3 style="margin-top:0">Nhập lô đá</h3><div class="f"><label>Mã lô<input id="a1" placeholder="LO-2610"></label><label>Loại đá / vân<input id="a2"></label><label>Số tấm<input id="a3" type="number" value="5"></label><label>Dài (m)<input id="a4" type="number" step="0.01" value="3"></label><label>Rộng (m)<input id="a5" type="number" step="0.01" value="1.6"></label><label>Dày (cm)<input id="a6" type="number" value="2"></label><label>Giá vốn/m²<input id="a7" type="number" value="600000"></label></div><p><button class="p" onclick="addSlabs()">Nhập kho</button></p></div>`},
-ban(){const op=S.slabs.filter(s=>s.rem>0.0001);return`<div class="c"><h3 style="margin-top:0">Báo giá / bán theo diện tích cắt</h3><div class="f"><label>Chọn tấm<select id="b1">${op.map(s=>`<option value="${esc(s.id)}">${esc(s.id)} – ${esc(s.type)} (${m2(s.rem)})</option>`).join('')}</select></label><label>Khách / công trình<input id="b2"></label><label>Diện tích cắt (m²)<input id="b3" type="number" step="0.01" oninput="pv()"></label><label>Đơn giá bán/m²<input id="b4" type="number" oninput="pv()"></label><label>Phí gia công<input id="b5" type="number" value="0" oninput="pv()"></label><label>Phí vận chuyển/thi công<input id="b6" type="number" value="0" oninput="pv()"></label><label>Đặt cọc<input id="b7" type="number" value="0"></label></div><h2 id="pvt">Tổng: 0 ₫</h2><button class="p" onclick="sell()">Tạo đơn &amp; trừ kho</button></div>`},
-don(){return`<div class="c w"><table><tr><th>Đơn</th><th>Khách</th><th>Tấm</th><th>Tổng</th><th>Còn nợ</th><th>Tiến độ</th><th></th></tr>${[...S.orders].reverse().map(o=>`<tr><td><b>${esc(o.id)}</b></td><td>${esc(o.cust)}</td><td>${esc(o.slab)} · ${m2(o.area)}</td><td>${vnd(o.total)}</td><td>${vnd(debt(o))}</td><td><span class="t">${STEPS[o.step]}</span></td><td>${o.step<5?`<button onclick="adv('${o.id}')">Chuyển bước ›</button> `:''}${debt(o)>0?`<button onclick="pay('${o.id}')">Thu tiền</button> `:''}<button onclick="pq('${o.id}')">In báo giá</button></td></tr>`).join('')||'<tr><td colspan=7 class="mu">Chưa có đơn.</td></tr>'}</table></div>`},
-nhatky(){return`<p><button class="p" onclick="verify()">Kiểm tra toàn vẹn nhật ký</button> <span id="vr" class="mu"></span></p><div class="c w"><table><tr><th>Thời gian</th><th>Người dùng</th><th>Hành động</th><th>Chi tiết</th></tr>${[...S.audit].reverse().map(x=>`<tr><td>${new Date(x.t).toLocaleString('vi-VN')}</td><td>${esc(x.u)}</td><td>${esc(x.a)}</td><td>${esc(x.d)}</td></tr>`).join('')}</table></div>`},
-qt(){return`<div class="c w"><h3 style="margin-top:0">👑 Người dùng &amp; phân quyền</h3><table><tr><th>Tên</th><th>Vai trò</th><th></th></tr>${V.users.map(u=>`<tr><td>${esc(u.u)}</td><td><span class="t">${u.role}</span></td><td><button onclick="rpw('${esc(u.u)}')">Đặt lại mật khẩu</button> <button class="d" onclick="du('${esc(u.u)}')">Xóa</button></td></tr>`).join('')}</table>
-<h4>Thêm người dùng</h4><div class="f"><label>Tên<input id="n1"></label><label>Vai trò<select id="n2"><option value="staff">staff – bán hàng, xem kho</option><option value="manager">manager – thêm nhập kho, xem nhật ký</option><option value="admin">admin – toàn quyền</option></select></label><label>Mật khẩu (≥10)<input id="n3" type="password"></label></div><p><button class="p" onclick="au()">Thêm</button></p></div>`},
-cf(){const f=CFG.fb,g=CFG.gh;return`<div class="c"><h3 style="margin-top:0">Filebase (S3) – lưu két mã hóa</h3><div class="f"><label>Endpoint<input id="f_ep" value="${esc(f.ep)}"></label><label>Region<input id="f_rg" value="${esc(f.rg)}"></label><label>Bucket<input id="f_bk" value="${esc(f.bucket)}"></label><label>Access key<input id="f_ak" value="${esc(f.ak)}"></label><label>Secret key<input id="f_sk" type="password" value="${esc(f.sk)}"></label><label><br><input id="f_au" type="checkbox" style="width:auto" ${f.auto?'checked':''}> Tự đồng bộ</label></div>
-<h3>GitHub – sao lưu</h3><div class="f"><label>Owner<input id="g_ow" value="${esc(g.ow)}"></label><label>Repo<input id="g_rp" value="${esc(g.rp)}"></label><label>Branch<input id="g_br" value="${esc(g.br)}"></label><label>Token<input id="g_tk" type="password" value="${esc(g.tk)}"></label><label>File<input id="g_pt" value="${esc(g.pt)}"></label></div>
-<p><button class="p" onclick="saveCfg()">Lưu cấu hình</button> <button onclick="act(async()=>{const r=await s3('GET','stonevault/vault.json');if(r.status==403)throw Error('Sai key/quyền');if(r.status>=500||r.status==400)throw Error('Lỗi '+r.status);return'Filebase OK ('+r.status+')'})">Kiểm tra Filebase</button> <button onclick="act(async()=>{await push();return'Đã đẩy lên Filebase'})">Đẩy lên</button> <button onclick="act(pullApply)">Kéo về</button> <button onclick="act(async()=>{await ghPush();return'Đã sao lưu GitHub'})">Sao lưu GitHub</button></p><p id="ar" class="mu"></p>
-<p class="mu">Két lưu trên Filebase/GitHub luôn là bản mã hóa. Cần bật CORS cho bucket Filebase với origin trang web của bạn.</p>
-<details><summary>Xuất két (JSON mã hóa)</summary><textarea id="xv" rows="4" style="width:100%" readonly>${esc(JSON.stringify(V))}</textarea></details>
-<p><button class="d" onclick="wipe()">Xóa két trên máy này</button></p></div>`}};
-async function act(f){$('#ar').textContent='Đang chạy…';try{$('#ar').textContent='✅ '+await f()}catch(e){$('#ar').textContent='❌ '+e.message+' (kiểm tra CORS/key)'}}
-async function pullApply(){const d=JSON.parse(await pull());if(!d.users||!d.data)throw Error('Dữ liệu không hợp lệ');if(!confirm('Ghi đè két trên máy bằng bản từ Filebase? Sẽ phải đăng nhập lại.'))throw Error('Đã hủy');ls.set(LK,JSON.stringify(d));lockNow();return''}
-async function saveCfg(){CFG={fb:{ep:g$('f_ep'),rg:g$('f_rg'),bucket:g$('f_bk'),ak:g$('f_ak'),sk:$('#f_sk').value,auto:$('#f_au').checked},gh:{ow:g$('g_ow'),rp:g$('g_rp'),br:g$('g_br'),tk:$('#g_tk').value,pt:g$('g_pt')}};V.cfg=await seal(CFG,CFGK);await log('CẤU HÌNH','Admin cập nhật Filebase/GitHub');render()}
-async function au(){const u=g$('n1'),p=$('#n3').value;if(!u||p.length<10||V.users.some(x=>x.u==u))return alert('Tên trùng/trống hoặc mật khẩu < 10 ký tự.');V.users.push(await mkUser(u,$('#n2').value,p));await log('NGƯỜI DÙNG','Thêm '+u+' ('+$('#n2').value+')');render()}
-async function rpw(u){const p=prompt('Mật khẩu mới cho '+u+' (≥10):');if(!p||p.length<10)return;const i=V.users.findIndex(x=>x.u==u);V.users[i]=await mkUser(u,V.users[i].role,p);if(me.u==u)me=V.users[i];await log('NGƯỜI DÙNG','Đặt lại mật khẩu '+u);render()}
-async function du(u){if(u==me.u||(V.users.find(x=>x.u==u).role=='admin'&&V.users.filter(x=>x.role=='admin').length<2))return alert('Không thể xóa chính mình hoặc admin cuối cùng.');if(!confirm('Xóa '+u+'?'))return;V.users=V.users.filter(x=>x.u!=u);await log('NGƯỜI DÙNG','Xóa '+u);render()}
-function wipe(){if(confirm('XÓA két trên máy này? (Bản trên Filebase/GitHub vẫn còn)')&&prompt('Gõ XOA')=='XOA'){ls.del(LK);lockNow()}}
-async function addSlabs(){if(!can('nhap'))return;const v=i=>g$('a'+i),n=+v(3),l=+v(4),w=+v(5),c=+v(7);if(!v(1)||!v(2)||!(n>0)||!(l>0)||!(w>0)||!(c>=0))return alert('Nhập đủ và đúng thông tin.');const b=S.slabs.filter(s=>s.lot==v(1)).length;for(let i=1;i<=n;i++)S.slabs.push({id:v(1)+'-'+String(b+i).padStart(3,'0'),lot:v(1),type:v(2),l,w,th:+v(6),area:+(l*w).toFixed(3),rem:+(l*w).toFixed(3),cost:c});await log('NHẬP KHO',`${n} tấm ${v(2)} lô ${v(1)}`);tab='kho';render()}
+ban(){const op=D.slabs.filter(s=>s.rem>0.0001);return`<div class="c"><h3 style="margin-top:0">Báo giá / bán theo diện tích cắt</h3><div class="f"><label>Chọn tấm<select id="b1">${op.map(s=>`<option value="${esc(s.id)}">${esc(s.id)} – ${esc(s.type)} (${m2(s.rem)})</option>`).join('')}</select></label><label>Khách / công trình<input id="b2"></label><label>Diện tích cắt (m²)<input id="b3" type="number" step="0.01" oninput="pv()"></label><label>Đơn giá bán/m²<input id="b4" type="number" oninput="pv()"></label><label>Phí gia công<input id="b5" type="number" value="0" oninput="pv()"></label><label>Phí vận chuyển/thi công<input id="b6" type="number" value="0" oninput="pv()"></label><label>Đặt cọc<input id="b7" type="number" value="0"></label></div><h2 id="pvt">Tổng: 0 ₫</h2><button class="p" onclick="sell()">Tạo đơn &amp; trừ kho</button></div>`},
+don(){return`<div class="c w"><table><tr><th>Đơn</th><th>Khách</th><th>Tấm</th><th>Tổng</th><th>Còn nợ</th><th>Tiến độ</th><th></th></tr>${[...D.orders].sort((a,b)=>b.date>a.date?1:-1).map(o=>`<tr><td><b>${esc(o.id)}</b></td><td>${esc(o.cust)}</td><td>${esc(o.slab)} · ${m2(o.area)}</td><td>${vnd(o.total)}</td><td>${vnd(debt(o))}</td><td><span class="t">${STEPS[o.step]}</span></td><td>${o.step<5?`<button onclick="adv('${o.id}')">Chuyển bước ›</button> `:''}${debt(o)>0?`<button onclick="pay('${o.id}')">Thu tiền</button> `:''}<button onclick="pq('${o.id}')">In báo giá</button></td></tr>`).join('')||'<tr><td colspan=7 class="mu">Chưa có đơn.</td></tr>'}</table></div>`},
+nhatky(){return`<p class="mu">Nhật ký do máy chủ ghi thời gian và Rules cấm sửa/xóa.</p><div class="c w"><table><tr><th>Thời gian</th><th>Người dùng</th><th>Hành động</th><th>Chi tiết</th></tr>${D.audit.map(x=>`<tr><td>${x.t?.toDate?x.t.toDate().toLocaleString('vi-VN'):'…'}</td><td>${esc(x.u)}</td><td>${esc(x.a)}</td><td>${esc(x.d)}</td></tr>`).join('')}</table></div>`},
+qt(){return`<div class="c w"><h3 style="margin-top:0">👑 Người dùng &amp; phân quyền</h3><table><tr><th>Email</th><th>Vai trò</th><th></th></tr>${D.users.map(u=>`<tr><td>${esc(u.email)}</td><td><select onchange="setRole('${u.id}',this.value)">${Object.keys(PERM).map(r=>`<option ${r==u.role?'selected':''}>${r}</option>`).join('')}</select></td><td><button class="d" onclick="du('${u.id}')">Thu hồi quyền</button></td></tr>`).join('')}</table>
+<h4>Cấp tài khoản mới</h4><div class="f"><label>Email<input id="n1" type="email"></label><label>Vai trò<select id="n2"><option value="staff">staff</option><option value="manager">manager</option><option value="admin">admin</option></select></label><label>Mật khẩu tạm (≥10)<input id="n3" type="password"></label></div><p><button class="p" onclick="au()">Tạo</button></p><p class="mu">Thu hồi quyền = xóa hồ sơ phân quyền, tài khoản mất mọi truy cập. Xóa hẳn tài khoản: Firebase Console → Authentication.</p></div>`},
+cf(){return`<div class="c"><h3 style="margin-top:0">Firestore Security Rules</h3><p class="mu">Dán vào Firebase Console → Firestore Database → Rules → Publish. Đây là lớp bảo mật thật chạy trên máy chủ Google.</p><textarea rows="14" style="width:100%" readonly>${esc(RULES)}</textarea><p class="mu">Project: <b>${esc(cfg.projectId)}</b></p></div>`}};
+/* ---- nghiệp vụ ---- */
+Object.assign(window,{render,tab:0,q:0,saveFb,resetFb,login,setupAdmin,lockNow,$,addSlabs,pv,sell,adv,pay,pq,setRole,du,au});
+Object.defineProperty(window,'tab',{get:()=>tab,set:v=>tab=v});Object.defineProperty(window,'q',{get:()=>q,set:v=>q=v});
+async function addSlabs(){if(!can('nhap'))return;const v=i=>g$('a'+i),n=+v(3),l=+v(4),w=+v(5),c=+v(7);if(!v(1)||!v(2)||!(n>0)||!(l>0)||!(w>0)||!(c>=0))return alert('Nhập đủ và đúng.');
+const b=D.slabs.filter(s=>s.lot==v(1)).length,bt=F.writeBatch(db);for(let i=1;i<=n;i++)bt.set(dc('slabs',v(1).replace(/\//g,'-')+'-'+String(b+i).padStart(3,'0')),{lot:v(1),type:v(2),l,w,th:+v(6),area:+(l*w).toFixed(3),rem:+(l*w).toFixed(3),cost:c});
+try{await bt.commit();log('NHẬP KHO',`${n} tấm ${v(2)} lô ${v(1)}`);tab='kho';render()}catch(e){alert('Lỗi: '+e.code)}}
 function pv(){const g=i=>+$('#b'+i).value||0;$('#pvt').textContent='Tổng: '+vnd(g(3)*g(4)+g(5)+g(6))}
-async function sell(){const g=i=>$('#b'+i).value,s=S.slabs.find(x=>x.id==g(1)),a=+g(3),p=+g(4);if(!s||!g(2).trim()||!(a>0)||!(p>0))return alert('Nhập đủ khách, diện tích, đơn giá.');if(a>s.rem+1e-6)return alert('Vượt phần còn lại ('+m2(s.rem)+').');
-const total=a*p+(+g(5)||0)+(+g(6)||0),dep=Math.min(+g(7)||0,total);s.rem=+(s.rem-a).toFixed(3);const o={id:'DH'+String(S.orders.length+1).padStart(4,'0'),cust:g(2).trim(),slab:s.id,area:a,price:p,fee:+g(5)||0,ship:+g(6)||0,total,paid:dep?[dep]:[],step:0,date:new Date().toISOString()};S.orders.push(o);await log('BÁN HÀNG',`${o.id} · ${s.id} · ${a}m² · ${vnd(total)}`+(s.rem>0&&s.rem<SCRAP?' · tấm dư/phế liệu':''));tab='don';render()}
-async function adv(id){const o=S.orders.find(x=>x.id==id);o.step++;await log('TIẾN ĐỘ',`${id} → ${STEPS[o.step]}`);render()}
-async function pay(id){const o=S.orders.find(x=>x.id==id),v=+prompt('Số tiền thu (nợ '+vnd(debt(o))+'):');if(!(v>0)||v>debt(o))return;o.paid.push(v);await log('THU TIỀN',`${id} · ${vnd(v)}`);render()}
-function pq(id){const o=S.orders.find(x=>x.id==id),s=S.slabs.find(x=>x.id==o.slab);$('#q').innerHTML=`<h2>BÁO GIÁ ${esc(o.id)}</h2><p>Khách: ${esc(o.cust)}<br>Ngày: ${new Date(o.date).toLocaleDateString('vi-VN')}</p><table border=1 cellpadding=6 style="border-collapse:collapse;width:100%"><tr><td>Đá ${esc(s?.type)} (${esc(o.slab)}, dày ${s?.th}cm)</td><td>${m2(o.area)} × ${vnd(o.price)}</td></tr><tr><td>Gia công</td><td>${vnd(o.fee)}</td></tr><tr><td>Vận chuyển/thi công</td><td>${vnd(o.ship)}</td></tr><tr><td><b>Tổng</b></td><td><b>${vnd(o.total)}</b></td></tr><tr><td>Còn lại</td><td>${vnd(debt(o))}</td></tr></table>`;print()}
-async function verify(){let p='0';for(const x of S.audit){if(x.h!==await sha(p+x.t+x.u+x.a+x.d)){$('#vr').textContent='❌ CHỈNH SỬA tại '+x.t;return}p=x.h}$('#vr').textContent='✅ Toàn vẹn: '+S.audit.length+' bản ghi'}
-init();
+async function sell(){const g=i=>$('#b'+i).value,id=g(1),a=+g(3),p=+g(4),cust=g(2).trim();if(!id||!cust||!(a>0)||!(p>0))return alert('Nhập đủ khách, diện tích, đơn giá.');
+const total=a*p+(+g(5)||0)+(+g(6)||0),dep=Math.min(+g(7)||0,total),oid='DH'+Date.now().toString(36).toUpperCase();
+try{await F.runTransaction(db,async t=>{const r=dc('slabs',id),s=await t.get(r);if(!s.exists()||s.data().rem<a-1e-6)throw Error('Vượt phần còn lại của tấm');t.update(r,{rem:+(s.data().rem-a).toFixed(3)});t.set(dc('orders',oid),{cust,slab:id,area:a,price:p,fee:+g(5)||0,ship:+g(6)||0,total,paid:dep?[dep]:[],step:0,date:new Date().toISOString(),by:me.uid})});
+log('BÁN HÀNG',`${oid} · ${id} · ${a}m² · ${vnd(total)}`);tab='don';render()}catch(e){alert(e.message)}}
+async function adv(id){const o=D.orders.find(x=>x.id==id);await F.updateDoc(dc('orders',id),{step:o.step+1});log('TIẾN ĐỘ',`${id} → ${STEPS[o.step+1]}`)}
+async function pay(id){const o=D.orders.find(x=>x.id==id),v=+prompt('Số tiền thu (nợ '+vnd(debt(o))+'):');if(!(v>0)||v>debt(o))return;await F.updateDoc(dc('orders',id),{paid:[...(o.paid||[]),v]});log('THU TIỀN',`${id} · ${vnd(v)}`)}
+function pq(id){const o=D.orders.find(x=>x.id==id),s=D.slabs.find(x=>x.id==o.slab);$('#q').innerHTML=`<h2>BÁO GIÁ ${esc(o.id)}</h2><p>Khách: ${esc(o.cust)}<br>Ngày: ${new Date(o.date).toLocaleDateString('vi-VN')}</p><table border=1 cellpadding=6 style="border-collapse:collapse;width:100%"><tr><td>Đá ${esc(s?.type)} (${esc(o.slab)}, dày ${s?.th}cm)</td><td>${m2(o.area)} × ${vnd(o.price)}</td></tr><tr><td>Gia công</td><td>${vnd(o.fee)}</td></tr><tr><td>Vận chuyển/thi công</td><td>${vnd(o.ship)}</td></tr><tr><td><b>Tổng</b></td><td><b>${vnd(o.total)}</b></td></tr><tr><td>Còn lại</td><td>${vnd(debt(o))}</td></tr></table>`;print()}
+async function setRole(id,r){if(id==me.uid&&r!='admin'&&!confirm('Bạn sắp tự hạ quyền Admin của mình. Tiếp tục?'))return render();await F.updateDoc(dc('users',id),{role:r});log('PHÂN QUYỀN',id+' → '+r)}
+async function du(id){if(id==me.uid)return alert('Không thể tự thu hồi quyền.');if(!confirm('Thu hồi quyền người này?'))return;await F.deleteDoc(dc('users',id));log('THU HỒI',id)}
+async function au(){const e=g$('n1'),p=$('#n3').value,r=$('#n2').value;if(!e||p.length<10)return alert('Cần email và mật khẩu ≥ 10 ký tự.');
+const a2=A.initializeApp(cfg,'sec'+Date.now()),au2=AU.getAuth(a2);try{const c=await AU.createUserWithEmailAndPassword(au2,e,p);await F.setDoc(dc('users',c.user.uid),{email:e,role:r});await AU.signOut(au2);log('TẠO TÀI KHOẢN',e+' ('+r+')');alert('Đã tạo. Hãy báo mật khẩu tạm cho người dùng.')}catch(x){alert('Lỗi: '+(x.code||x.message))}}
+cfg=JSON.parse(ls.get('sv_fb')||'null');boot();
 </script></body></html>
